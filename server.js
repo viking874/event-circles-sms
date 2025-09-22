@@ -84,4 +84,5 @@ app.post('/api/sms-webhook', (req, res) => {
     // Find active events this friend was invited to
     const activeEvents = events.filter(event => 
         event.status === 'active' && 
-        even
+        event.pendingInvitations.includes(friendName)
+);
