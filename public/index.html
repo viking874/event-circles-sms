@@ -5,23 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event Circles - SMS Integration</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            color: #333;
+            margin: 0;
+            padding: 20px;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1000px;
             margin: 0 auto;
-            padding: 20px;
         }
 
         .header {
@@ -30,102 +24,71 @@
             margin-bottom: 30px;
         }
 
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-
         .card {
             background: white;
             border-radius: 15px;
             padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .card h2 {
-            color: #5a67d8;
             margin-bottom: 20px;
-            font-size: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
 
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #4a5568;
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
         }
 
         input, textarea {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #5a67d8, #667eea);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-
-        .add-friend-form {
-            display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 10px;
-            margin-bottom: 15px;
-            align-items: end;
-        }
-
-        .circle-item {
-            background: #f7fafc;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 4px solid #5a67d8;
-        }
-
-        .friend-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #e2e8f0;
-            padding: 8px 12px;
-            border-radius: 8px;
-            margin-bottom: 6px;
-        }
-
-        .friend-details {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
             flex: 1;
         }
 
-        .friend-name {
-            font-weight: 600;
-            color: #2d3748;
-            font-size: 13px;
+        button {
+            background: #5a67d8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
         }
 
-        .friend-phone {
-            font-size: 11px;
-            color: #718096;
+        button:hover {
+            background: #4c51bf;
+        }
+
+        .friend-list, .circle-list {
+            margin-top: 20px;
+            min-height: 50px;
+            border: 1px dashed #ccc;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .friend-item, .circle-item {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .remove-btn {
+            background: #e53e3e;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .status {
+            color: green;
+            font-weight: bold;
+            margin: 10px 0;
         }
     </style>
 </head>
@@ -133,50 +96,47 @@
     <div class="container">
         <div class="header">
             <h1>Event Circles - SMS Integration</h1>
-            <p>Tiered friend circles with real SMS invitations (+17329367666)</p>
+            <p>Create friend circles and send SMS invitations</p>
         </div>
 
-        <div class="main-content">
-            <div class="card">
-                <h2>Create Friend Circles</h2>
-                <div class="form-group">
-                    <label>Circle Name</label>
-                    <input type="text" id="circleName" placeholder="e.g., Close Friends, Golf Buddies">
-                </div>
-                <div class="add-friend-form">
-                    <input type="text" id="friendName" placeholder="Friend name">
-                    <input type="tel" id="friendPhone" placeholder="+1234567890">
-                    <button class="btn" onclick="addFriend()">Add</button>
-                </div>
-                <button class="btn" onclick="createCircle()">Create Circle</button>
-                
-                <div id="circlesList"></div>
+        <div class="card">
+            <h2>Create Friend Circle</h2>
+            
+            <div class="form-row">
+                <input type="text" id="circleName" placeholder="Circle name (e.g., Close Friends)">
+            </div>
+            
+            <div class="form-row">
+                <input type="text" id="friendName" placeholder="Friend name">
+                <input type="tel" id="friendPhone" placeholder="+1234567890">
+                <button onclick="addFriend()">Add Friend</button>
             </div>
 
-            <div class="card">
-                <h2>Create Event</h2>
-                <div class="form-group">
-                    <label>Event Name</label>
-                    <input type="text" id="eventName" placeholder="e.g., Saturday Golf">
-                </div>
-                <div class="form-group">
-                    <label>Date & Time</label>
-                    <input type="datetime-local" id="eventDateTime">
-                </div>
-                <div class="form-group">
-                    <label>Location</label>
-                    <input type="text" id="eventLocation" placeholder="e.g., Pine Valley Golf Club">
-                </div>
-                <div class="form-group">
-                    <label>Max Participants</label>
-                    <input type="number" id="maxParticipants" value="4" min="1">
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="eventDescription" placeholder="Event details..."></textarea>
-                </div>
-                <button class="btn" onclick="createEvent()">Send SMS Invitations</button>
+            <div id="statusMessage" class="status"></div>
+
+            <div class="friend-list">
+                <strong>Friends to add to circle:</strong>
+                <div id="friendsList"></div>
             </div>
+
+            <button onclick="createCircle()" style="margin-top: 10px;">Create Circle</button>
+        </div>
+
+        <div class="card">
+            <h2>Your Circles</h2>
+            <div id="circlesList" class="circle-list"></div>
+        </div>
+
+        <div class="card">
+            <h2>Create Event</h2>
+            
+            <input type="text" id="eventName" placeholder="Event name" style="margin-bottom: 10px;">
+            <input type="datetime-local" id="eventDateTime" style="margin-bottom: 10px;">
+            <input type="text" id="eventLocation" placeholder="Location" style="margin-bottom: 10px;">
+            <input type="number" id="maxParticipants" value="4" min="1" placeholder="Max participants" style="margin-bottom: 10px;">
+            <textarea id="eventDescription" placeholder="Description" style="margin-bottom: 10px;"></textarea>
+            
+            <button onclick="createEvent()">Create Event & Send SMS</button>
         </div>
     </div>
 
@@ -184,51 +144,148 @@
         let circles = [];
         let currentFriends = [];
 
+        function showStatus(message) {
+            const status = document.getElementById('statusMessage');
+            status.textContent = message;
+            setTimeout(() => status.textContent = '', 3000);
+        }
+
         function addFriend() {
-            const friendName = document.getElementById('friendName').value.trim();
-            const friendPhone = document.getElementById('friendPhone').value.trim();
+            const name = document.getElementById('friendName').value.trim();
+            const phone = document.getElementById('friendPhone').value.trim();
             
-            if (friendName && friendPhone) {
-                currentFriends.push({name: friendName, phone: friendPhone});
-                document.getElementById('friendName').value = '';
-                document.getElementById('friendPhone').value = '';
-                console.log('Added friend:', friendName);
+            if (!name) {
+                alert('Please enter friend name');
+                return;
             }
+            
+            if (!phone) {
+                alert('Please enter phone number');
+                return;
+            }
+            
+            if (currentFriends.find(f => f.name === name)) {
+                alert('Friend already added');
+                return;
+            }
+            
+            currentFriends.push({name, phone});
+            
+            document.getElementById('friendName').value = '';
+            document.getElementById('friendPhone').value = '';
+            
+            showStatus(`Added ${name}`);
+            updateFriendsList();
         }
 
-        function createCircle() {
-            const name = document.getElementById('circleName').value.trim();
-            if (name && currentFriends.length > 0) {
-                const newCircle = {
-                    id: Date.now(),
-                    name: name,
-                    friends: [...currentFriends]
-                };
-                circles.push(newCircle);
-                currentFriends = [];
-                document.getElementById('circleName').value = '';
-                renderCircles();
+        function updateFriendsList() {
+            const container = document.getElementById('friendsList');
+            
+            if (currentFriends.length === 0) {
+                container.innerHTML = '<em>No friends added yet</em>';
+                return;
             }
-        }
-
-        function renderCircles() {
-            const container = document.getElementById('circlesList');
-            container.innerHTML = circles.map(circle => `
-                <div class="circle-item">
-                    <h3>${circle.name}</h3>
-                    ${circle.friends.map(friend => `
-                        <div class="friend-item">
-                            <div class="friend-details">
-                                <div class="friend-name">${friend.name}</div>
-                                <div class="friend-phone">${friend.phone}</div>
-                            </div>
-                        </div>
-                    `).join('')}
+            
+            container.innerHTML = currentFriends.map((friend, index) => `
+                <div class="friend-item">
+                    <span>${friend.name} (${friend.phone})</span>
+                    <button class="remove-btn" onclick="removeFriend(${index})">Remove</button>
                 </div>
             `).join('');
         }
 
-        async function createEvent() {
+        function removeFriend(index) {
+            const friend = currentFriends[index];
+            currentFriends.splice(index, 1);
+            showStatus(`Removed ${friend.name}`);
+            updateFriendsList();
+        }
+
+        function createCircle() {
+            const name = document.getElementById('circleName').value.trim();
+            
+            if (!name) {
+                alert('Please enter circle name');
+                return;
+            }
+            
+            if (currentFriends.length === 0) {
+                alert('Please add friends first');
+                return;
+            }
+            
+            const circle = {
+                id: Date.now(),
+                name: name,
+                friends: [...currentFriends]
+            };
+            
+            circles.push(circle);
+            
+            // Clear form
+            document.getElementById('circleName').value = '';
+            currentFriends = [];
+            
+            showStatus(`Created circle: ${name}`);
+            updateFriendsList();
+            updateCirclesList();
+        }
+
+        function updateCirclesList() {
+            const container = document.getElementById('circlesList');
+            
+            if (circles.length === 0) {
+                container.innerHTML = '<em>No circles created yet</em>';
+                return;
+            }
+            
+            container.innerHTML = circles.map(circle => `
+                <div class="circle-item">
+                    <div>
+                        <strong>${circle.name}</strong><br>
+                        <small>${circle.friends.length} friends: ${circle.friends.map(f => f.name).join(', ')}</small>
+                    </div>
+                    <button class="remove-btn" onclick="deleteCircle(${circle.id})">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        function deleteCircle(id) {
+            if (confirm('Delete this circle?')) {
+                circles = circles.filter(c => c.id !== id);
+                updateCirclesList();
+                showStatus('Circle deleted');
+            }
+        }
+
+        function createEvent() {
             const name = document.getElementById('eventName').value.trim();
             const dateTime = document.getElementById('eventDateTime').value;
-            const location = document.getElementById('eventLocation').
+            const location = document.getElementById('eventLocation').value.trim();
+            const maxParticipants = document.getElementById('maxParticipants').value;
+            
+            if (!name || !dateTime || !location) {
+                alert('Please fill in all event fields');
+                return;
+            }
+            
+            if (circles.length === 0) {
+                alert('Please create some circles first');
+                return;
+            }
+            
+            alert(`Event "${name}" created! Note: SMS requires A2P 10DLC registration to send.`);
+            
+            // Clear form
+            document.getElementById('eventName').value = '';
+            document.getElementById('eventDateTime').value = '';
+            document.getElementById('eventLocation').value = '';
+            document.getElementById('eventDescription').value = '';
+        }
+
+        // Initialize
+        updateFriendsList();
+        updateCirclesList();
+    </script>
+</body>
+</html>
