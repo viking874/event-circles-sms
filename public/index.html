@@ -14,7 +14,7 @@
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
@@ -62,7 +62,12 @@
             background: #4c51bf;
         }
 
-        .friend-list, .circle-list {
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .friend-list, .circle-list, .events-list {
             margin-top: 20px;
             min-height: 50px;
             border: 1px dashed #ccc;
@@ -70,7 +75,7 @@
             border-radius: 5px;
         }
 
-        .friend-item, .circle-item {
+        .friend-item, .circle-item, .event-item {
             background: #f0f0f0;
             padding: 10px;
             margin: 5px 0;
@@ -89,8 +94,24 @@
             cursor: pointer;
         }
 
+        .view-btn {
+            background: #38a169;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
         .status {
             color: green;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .error {
+            color: red;
             font-weight: bold;
             margin: 10px 0;
         }
@@ -102,60 +123,183 @@
             border-radius: 5px;
             border: 1px solid #38b2ac;
         }
+
+        .loading {
+            display: none;
+            color: #5a67d8;
+            font-weight: bold;
+        }
+
+        .responses-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .response-stat {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid #5a67d8;
+        }
+
+        .response-stat.confirmed {
+            border-left-color: #38a169;
+        }
+
+        .response-stat.declined {
+            border-left-color: #e53e3e;
+        }
+
+        .response-stat.waitlist {
+            border-left-color: #d69e2e;
+        }
+
+        .response-stat.pending {
+            border-left-color: #718096;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 20px;
+            border-radius: 15px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .response-list {
+            margin: 10px 0;
+        }
+
+        .response-item {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid #5a67d8;
+        }
+
+        .response-item.confirmed {
+            border-left-color: #38a169;
+            background: #f0fff4;
+        }
+
+        .response-item.declined {
+            border-left-color: #e53e3e;
+            background: #fdf2f2;
+        }
+
+        .response-item.waitlist {
+            border-left-color: #d69e2e;
+            background: #fffbf0;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Event Circles - SMS Integration</h1>
-            <p>Create friend circles and send SMS invitations</p>
+            <p>Create friend circles and send SMS invitations with automatic confirmations</p>
+        </div>
+
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>Create Friend Circle</h2>
+                    
+                    <div class="form-row">
+                        <input type="text" id="circleName" placeholder="Circle name (e.g., Close Friends)">
+                    </div>
+                    
+                    <div class="form-row">
+                        <input type="text" id="friendName" placeholder="Friend name">
+                        <input type="tel" id="friendPhone" placeholder="+1234567890">
+                        <button onclick="addFriend()">Add Friend</button>
+                    </div>
+
+                    <div id="statusMessage" class="status"></div>
+                    <div id="errorMessage" class="error"></div>
+
+                    <div class="friend-list">
+                        <strong>Friends to add to circle:</strong>
+                        <div id="friendsList"></div>
+                    </div>
+
+                    <button onclick="createCircle()" style="margin-top: 10px;">Create Circle</button>
+                </div>
+
+                <div class="card">
+                    <h2>Your Circles</h2>
+                    <div id="circlesList" class="circle-list"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="card">
+                    <h2>Create Event & Send SMS</h2>
+                    
+                    <input type="text" id="eventName" placeholder="Event name" style="margin-bottom: 10px;">
+                    <input type="datetime-local" id="eventDateTime" style="margin-bottom: 10px;">
+                    <input type="text" id="eventLocation" placeholder="Location" style="margin-bottom: 10px;">
+                    <input type="number" id="maxParticipants" value="4" min="1" placeholder="Max participants" style="margin-bottom: 10px;">
+                    
+                    <select id="selectedCircle" style="margin-bottom: 10px;">
+                        <option value="">Select a circle to invite</option>
+                    </select>
+                    
+                    <div id="selectedCircleInfo"></div>
+                    
+                    <textarea id="eventDescription" placeholder="Description (optional)" style="margin-bottom: 10px;"></textarea>
+                    
+                    <button id="createEventBtn" onclick="createEvent()">🚀 Create Event & Send SMS</button>
+                    <div id="eventLoading" class="loading">📱 Sending SMS invitations...</div>
+                </div>
+            </div>
         </div>
 
         <div class="card">
-            <h2>Create Friend Circle</h2>
-            
-            <div class="form-row">
-                <input type="text" id="circleName" placeholder="Circle name (e.g., Close Friends)">
-            </div>
-            
-            <div class="form-row">
-                <input type="text" id="friendName" placeholder="Friend name">
-                <input type="tel" id="friendPhone" placeholder="+1234567890">
-                <button onclick="addFriend()">Add Friend</button>
-            </div>
-
-            <div id="statusMessage" class="status"></div>
-
-            <div class="friend-list">
-                <strong>Friends to add to circle:</strong>
-                <div id="friendsList"></div>
-            </div>
-
-            <button onclick="createCircle()" style="margin-top: 10px;">Create Circle</button>
+            <h2>📊 Recent Events & Responses</h2>
+            <div id="eventsList" class="events-list">Loading events...</div>
+            <button onclick="loadEvents()" style="margin-top: 10px;">🔄 Refresh Events</button>
         </div>
+    </div>
 
-        <div class="card">
-            <h2>Your Circles</h2>
-            <div id="circlesList" class="circle-list"></div>
-        </div>
-
-        <div class="card">
-            <h2>Create Event</h2>
-            
-            <input type="text" id="eventName" placeholder="Event name" style="margin-bottom: 10px;">
-            <input type="datetime-local" id="eventDateTime" style="margin-bottom: 10px;">
-            <input type="text" id="eventLocation" placeholder="Location" style="margin-bottom: 10px;">
-            <input type="number" id="maxParticipants" value="4" min="1" placeholder="Max participants" style="margin-bottom: 10px;">
-            
-            <select id="selectedCircle" style="margin-bottom: 10px;">
-                <option value="">Select a circle to invite</option>
-            </select>
-            
-            <div id="selectedCircleInfo"></div>
-            
-            <textarea id="eventDescription" placeholder="Description" style="margin-bottom: 10px;"></textarea>
-            
-            <button onclick="createEvent()">Create Event & Send SMS</button>
+    <!-- Event Details Modal -->
+    <div id="eventModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="eventDetails"></div>
         </div>
     </div>
 
@@ -165,8 +309,18 @@
 
         function showStatus(message) {
             const status = document.getElementById('statusMessage');
+            const error = document.getElementById('errorMessage');
             status.textContent = message;
+            error.textContent = '';
             setTimeout(() => status.textContent = '', 3000);
+        }
+
+        function showError(message) {
+            const status = document.getElementById('statusMessage');
+            const error = document.getElementById('errorMessage');
+            error.textContent = message;
+            status.textContent = '';
+            setTimeout(() => error.textContent = '', 5000);
         }
 
         function addFriend() {
@@ -174,17 +328,23 @@
             const phone = document.getElementById('friendPhone').value.trim();
             
             if (!name) {
-                alert('Please enter friend name');
+                showError('Please enter friend name');
                 return;
             }
             
             if (!phone) {
-                alert('Please enter phone number');
+                showError('Please enter phone number');
+                return;
+            }
+
+            // Basic phone validation
+            if (!/^\+?[\d\s\-\(\)]+$/.test(phone)) {
+                showError('Please enter a valid phone number');
                 return;
             }
             
             if (currentFriends.find(f => f.name === name)) {
-                alert('Friend already added');
+                showError('Friend already added');
                 return;
             }
             
@@ -224,12 +384,12 @@
             const name = document.getElementById('circleName').value.trim();
             
             if (!name) {
-                alert('Please enter circle name');
+                showError('Please enter circle name');
                 return;
             }
             
             if (currentFriends.length === 0) {
-                alert('Please add friends first');
+                showError('Please add friends first');
                 return;
             }
             
@@ -273,10 +433,8 @@
         function updateCircleDropdown() {
             const select = document.getElementById('selectedCircle');
             
-            // Clear existing options except the first one
             select.innerHTML = '<option value="">Select a circle to invite</option>';
             
-            // Add circles as options
             circles.forEach(circle => {
                 const option = document.createElement('option');
                 option.value = circle.id;
@@ -299,7 +457,7 @@
                 infoDiv.innerHTML = `
                     <div class="selected-circle">
                         <strong>Selected Circle: ${selectedCircle.name}</strong><br>
-                        <small>Will invite: ${selectedCircle.friends.map(f => f.name).join(', ')}</small>
+                        <small>📱 Will send SMS to: ${selectedCircle.friends.map(f => `${f.name} (${f.phone})`).join(', ')}</small>
                     </div>
                 `;
             }
@@ -314,7 +472,7 @@
             }
         }
 
-        function createEvent() {
+        async function createEvent() {
             const name = document.getElementById('eventName').value.trim();
             const dateTime = document.getElementById('eventDateTime').value;
             const location = document.getElementById('eventLocation').value.trim();
@@ -323,47 +481,214 @@
             const selectedCircleId = document.getElementById('selectedCircle').value;
             
             if (!name || !dateTime || !location) {
-                alert('Please fill in all event fields');
+                showError('Please fill in all required event fields');
                 return;
             }
             
             if (!selectedCircleId) {
-                alert('Please select a circle to invite');
+                showError('Please select a circle to invite');
                 return;
             }
             
             const selectedCircle = circles.find(c => c.id == selectedCircleId);
             
-            if (selectedCircle) {
-                // Format the date/time nicely
-                const eventDate = new Date(dateTime);
-                const formattedDate = eventDate.toLocaleDateString() + ' at ' + eventDate.toLocaleTimeString();
-                
-                // Create the SMS message
-                const smsMessage = `🎉 You're invited to ${name}!\n\n📅 When: ${formattedDate}\n📍 Where: ${location}\n👥 Max ${maxParticipants} people\n\n${description ? description + '\n\n' : ''}Reply YES to join or NO to decline. First ${maxParticipants} responses confirmed!`;
-                
-                // Show message preview
-                const phoneNumbers = selectedCircle.friends.map(f => `${f.name}: ${f.phone}`).join('\n');
-                
-                alert(`📱 SMS MESSAGE PREVIEW:\n\n"${smsMessage}"\n\n📞 SENDING TO:\n${phoneNumbers}\n\n✅ Event "${name}" created!\n\n⚠️ Note: This is a preview. Real SMS requires A2P 10DLC registration.`);
+            if (!selectedCircle) {
+                showError('Selected circle not found');
+                return;
             }
-            
-            // Clear form
-            document.getElementById('eventName').value = '';
-            document.getElementById('eventDateTime').value = '';
-            document.getElementById('eventLocation').value = '';
-            document.getElementById('eventDescription').value = '';
-            document.getElementById('selectedCircle').value = '';
-            updateSelectedCircleInfo();
+
+            // Show loading state
+            const btn = document.getElementById('createEventBtn');
+            const loading = document.getElementById('eventLoading');
+            btn.disabled = true;
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/events', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name,
+                        datetime: dateTime,
+                        location,
+                        maxParticipants: parseInt(maxParticipants),
+                        description,
+                        friends: selectedCircle.friends
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus(`🎉 Event "${name}" created and SMS sent to ${selectedCircle.friends.length} people!`);
+                    
+                    // Clear form
+                    document.getElementById('eventName').value = '';
+                    document.getElementById('eventDateTime').value = '';
+                    document.getElementById('eventLocation').value = '';
+                    document.getElementById('eventDescription').value = '';
+                    document.getElementById('selectedCircle').value = '';
+                    updateSelectedCircleInfo();
+
+                    // Refresh events list
+                    loadEvents();
+                } else {
+                    showError(`Failed to create event: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Failed to create event. Please check your connection and try again.');
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        async function loadEvents() {
+            try {
+                const response = await fetch('/api/events');
+                const events = await response.json();
+                
+                const container = document.getElementById('eventsList');
+                
+                if (events.length === 0) {
+                    container.innerHTML = '<em>No events created yet</em>';
+                    return;
+                }
+                
+                container.innerHTML = events.map(event => {
+                    const eventDate = new Date(event.datetime);
+                    const isUpcoming = eventDate > new Date();
+                    
+                    return `
+                        <div class="event-item">
+                            <div>
+                                <strong>${event.name}</strong> ${isUpcoming ? '🟢' : '🔴'}<br>
+                                <small>📅 ${eventDate.toLocaleDateString()} at ${eventDate.toLocaleTimeString()}</small><br>
+                                <small>📍 ${event.location} | 👥 ${event.confirmed_count}/${event.max_participants} confirmed | ${event.total_invites} invited</small>
+                            </div>
+                            <button class="view-btn" onclick="viewEvent(${event.id})">📊 View Details</button>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading events:', error);
+                document.getElementById('eventsList').innerHTML = '<em>Error loading events</em>';
+            }
+        }
+
+        async function viewEvent(eventId) {
+            try {
+                const response = await fetch(`/api/events/${eventId}`);
+                const data = await response.json();
+                
+                const { event, responses, stats } = data;
+                const eventDate = new Date(event.datetime);
+                
+                document.getElementById('eventDetails').innerHTML = `
+                    <h2>${event.name}</h2>
+                    <p><strong>📅 When:</strong> ${eventDate.toLocaleDateString()} at ${eventDate.toLocaleTimeString()}</p>
+                    <p><strong>📍 Where:</strong> ${event.location}</p>
+                    <p><strong>👥 Max Participants:</strong> ${event.max_participants}</p>
+                    ${event.description ? `<p><strong>📝 Description:</strong> ${event.description}</p>` : ''}
+                    
+                    <div class="responses-summary">
+                        <div class="response-stat confirmed">
+                            <h3>${stats.confirmed}</h3>
+                            <p>Confirmed</p>
+                        </div>
+                        <div class="response-stat declined">
+                            <h3>${stats.declined}</h3>
+                            <p>Declined</p>
+                        </div>
+                        <div class="response-stat waitlist">
+                            <h3>${stats.waitlist}</h3>
+                            <p>Waitlisted</p>
+                        </div>
+                        <div class="response-stat pending">
+                            <h3>${stats.pending}</h3>
+                            <p>Pending</p>
+                        </div>
+                    </div>
+
+                    ${responses.confirmed.length ? `
+                        <h3>✅ Confirmed Attendees</h3>
+                        <div class="response-list">
+                            ${responses.confirmed.map(r => `
+                                <div class="response-item confirmed">
+                                    <strong>${r.name}</strong> (${r.phone})<br>
+                                    <small>Responded: ${new Date(r.responded_at).toLocaleString()}</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${responses.waitlist.length ? `
+                        <h3>⏳ Waitlist</h3>
+                        <div class="response-list">
+                            ${responses.waitlist.map(r => `
+                                <div class="response-item waitlist">
+                                    <strong>${r.name}</strong> (${r.phone})<br>
+                                    <small>Waitlisted: ${new Date(r.responded_at).toLocaleString()}</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${responses.declined.length ? `
+                        <h3>❌ Declined</h3>
+                        <div class="response-list">
+                            ${responses.declined.map(r => `
+                                <div class="response-item declined">
+                                    <strong>${r.name}</strong> (${r.phone})<br>
+                                    <small>Declined: ${new Date(r.responded_at).toLocaleString()}</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${responses.pending.length ? `
+                        <h3>⏱️ Pending Responses</h3>
+                        <div class="response-list">
+                            ${responses.pending.map(r => `
+                                <div class="response-item">
+                                    <strong>${r.name}</strong> (${r.phone})<br>
+                                    <small>Invited but not yet responded</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                `;
+                
+                document.getElementById('eventModal').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading event details:', error);
+                showError('Failed to load event details');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('eventModal').style.display = 'none';
         }
 
         // Initialize
         updateFriendsList();
         updateCirclesList();
         updateCircleDropdown();
+        loadEvents();
         
-        // Set up circle selection event listener
+        // Set up event listeners
         document.getElementById('selectedCircle').addEventListener('change', updateSelectedCircleInfo);
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('eventModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        }
     </script>
 </body>
 </html>
