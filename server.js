@@ -1,234 +1,349 @@
 const express = require('express');
-const cors = require('cors');
 const twilio = require('twilio');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
 // Twilio configuration
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+
+if (!accountSid || !authToken || !twilioPhoneNumber) {
+    console.error('⚠️  Missing Twilio credentials in .env file');
+    console.log('Please add:\nTWILIO_ACCOUNT_SID=your_sid\nTWILIO_AUTH_TOKEN=your_token\nTWILIO_PHONE_NUMBER=+1234567890');
+}
+
 const client = twilio(accountSid, authToken);
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// In-memory storage
-let events = [];
-let circles = [];
-let phoneNumbers = {};
+// Initialize SQLite database
+const db = new sqlite3.Database('events.db');
+
+// Create tables
+db.serialize(() => {
+    // Events table
+    db.run(`CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        datetime TEXT NOT NULL,
+        location TEXT NOT NULL,
+        max_participants INTEGER NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // Invitations table
+    db.run(`CREATE TABLE IF NOT EXISTS invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        responded_at DATETIME,
+        FOREIGN KEY (event_id) REFERENCES events (id)
+    )`);
+});
 
 // API Routes
-app.get('/api/events', (req, res) => {
-    res.json(events);
-});
 
-app.get('/api/circles', (req, res) => {
-    res.json(circles);
-});
+// Create event and send SMS invitations
+app.post('/api/events', async (req, res) => {
+    const { name, datetime, location, maxParticipants, description, friends } = req.body;
 
-app.post('/api/circles', (req, res) => {
-    const circle = {
-        id: Date.now(),
-        ...req.body
-    };
-    circles.push(circle);
-    res.json(circle);
-});
-
-app.post('/api/events', (req, res) => {
-    const event = {
-        id: Date.now(),
-        ...req.body,
-        participants: [],
-        invitationsSent: [],
-        pendingInvitations: [],
-        responses: [],
-        status: 'active'
-    };
-    
-    events.push(event);
-    sendInvitationsToCurrentCircle(event);
-    res.json(event);
-});
-
-app.post('/api/friends', (req, res) => {
-    const { name, phoneNumber } = req.body;
-    phoneNumbers[name] = phoneNumber;
-    res.json({ success: true });
-});
-
-app.get('/api/friends', (req, res) => {
-    res.json(phoneNumbers);
-});
-
-app.post('/api/sms-webhook', (req, res) => {
-    const { From, Body } = req.body;
-    const response = Body.trim().toUpperCase();
-    
-    const friendName = findFriendByPhone(From);
-    if (!friendName) {
-        console.log(`Unknown phone number: ${From}`);
-        return res.status(200).send();
+    if (!name || !datetime || !location || !friends || friends.length === 0) {
+        return res.status(400).json({ error: 'Missing required fields' });
     }
-    
-    const activeEvents = events.filter(event => 
-        event.status === 'active' && 
-        event.pendingInvitations.includes(friendName)
-    );
-    
-    activeEvents.forEach(event => {
-        if (response === 'Y' || response === 'YES') {
-            handleAcceptance(event, friendName, From);
-        } else if (response === 'N' || response === 'NO') {
-            handleDecline(event, friendName, From);
-        }
-    });
-    
-    res.status(200).send();
-});
 
-function sendInvitationsToCurrentCircle(event) {
-    if (event.currentCircle >= event.circleOrder.length) return;
+    try {
+        // Insert event into database
+        const eventId = await new Promise((resolve, reject) => {
+            const stmt = db.prepare(`INSERT INTO events (name, datetime, location, max_participants, description) 
+                                   VALUES (?, ?, ?, ?, ?)`);
+            
+            stmt.run([name, datetime, location, maxParticipants, description], function(err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+            });
+            stmt.finalize();
+        });
 
-    const circleId = event.circleOrder[event.currentCircle];
-    const circle = circles.find(c => c.id === circleId);
-    
-    if (!circle) return;
-    
-    circle.friends.forEach(async (friend) => {
-        const friendName = friend.name || friend;
-        const friendPhone = friend.phone || phoneNumbers[friendName];
-        
-        if (!event.invitationsSent.includes(friendName) && 
-            !event.participants.includes(friendName) && 
-            friendPhone) {
-            
-            const message = createInvitationMessage(event);
-            
-            try {
-                await client.messages.create({
-                    body: message,
-                    from: twilioPhoneNumber,
-                    to: friendPhone
+        // Insert invitations
+        const invitePromises = friends.map(friend => {
+            return new Promise((resolve, reject) => {
+                const stmt = db.prepare(`INSERT INTO invitations (event_id, name, phone) VALUES (?, ?, ?)`);
+                stmt.run([eventId, friend.name, friend.phone], function(err) {
+                    if (err) reject(err);
+                    else resolve();
                 });
-                
-                event.invitationsSent.push(friendName);
-                event.pendingInvitations.push(friendName);
-                
-                console.log(`Invitation sent to ${friendName}`);
-            } catch (error) {
-                console.error(`Failed to send SMS to ${friendName}:`, error);
+                stmt.finalize();
+            });
+        });
+
+        await Promise.all(invitePromises);
+
+        // Format date for SMS
+        const eventDate = new Date(datetime);
+        const formattedDate = eventDate.toLocaleDateString() + ' at ' + eventDate.toLocaleTimeString();
+
+        // Create SMS message
+        const smsMessage = `🎉 You're invited to ${name}!
+
+📅 When: ${formattedDate}
+📍 Where: ${location}
+👥 Max ${maxParticipants} people
+
+${description ? description + '\n\n' : ''}Reply YES to join or NO to decline. First ${maxParticipants} responses confirmed!
+
+Event ID: ${eventId}`;
+
+        // Send SMS to all friends
+        const smsPromises = friends.map(friend => {
+            return client.messages.create({
+                body: smsMessage,
+                from: twilioPhoneNumber,
+                to: friend.phone
+            });
+        });
+
+        const smsResults = await Promise.all(smsPromises);
+
+        res.json({
+            success: true,
+            eventId: eventId,
+            message: `Event created and SMS sent to ${friends.length} people`,
+            smsResults: smsResults.map(result => result.sid)
+        });
+
+    } catch (error) {
+        console.error('Error creating event:', error);
+        res.status(500).json({ error: 'Failed to create event and send SMS' });
+    }
+});
+
+// Webhook to handle incoming SMS responses
+app.post('/webhook/sms', (req, res) => {
+    const { From, Body } = req.body;
+    const incomingMessage = Body.toLowerCase().trim();
+    const phoneNumber = From;
+
+    console.log(`📱 SMS from ${phoneNumber}: ${Body}`);
+
+    // Extract event ID if present
+    const eventIdMatch = Body.match(/event id:\s*(\d+)/i);
+    
+    if (!eventIdMatch && !incomingMessage.includes('yes') && !incomingMessage.includes('no')) {
+        // Send help message
+        client.messages.create({
+            body: 'Please reply with YES or NO to respond to an event invitation, or include the Event ID in your message.',
+            from: twilioPhoneNumber,
+            to: phoneNumber
+        });
+        return res.status(200).send('');
+    }
+
+    // Find the invitation
+    const findInvitation = (eventId) => {
+        return new Promise((resolve, reject) => {
+            let query, params;
+            
+            if (eventId) {
+                query = `SELECT i.*, e.name as event_name, e.max_participants, e.datetime, e.location 
+                        FROM invitations i 
+                        JOIN events e ON i.event_id = e.id 
+                        WHERE i.phone = ? AND i.event_id = ? AND i.status = 'pending'`;
+                params = [phoneNumber, eventId];
+            } else {
+                query = `SELECT i.*, e.name as event_name, e.max_participants, e.datetime, e.location 
+                        FROM invitations i 
+                        JOIN events e ON i.event_id = e.id 
+                        WHERE i.phone = ? AND i.status = 'pending' 
+                        ORDER BY i.id DESC LIMIT 1`;
+                params = [phoneNumber];
             }
-        }
-    });
-}
-
-function createInvitationMessage(event) {
-    const eventDate = new Date(event.dateTime);
-    const dateStr = eventDate.toLocaleDateString('en-US', {
-        weekday: 'short', 
-        month: 'short', 
-        day: 'numeric'
-    });
-    const timeStr = eventDate.toLocaleTimeString([], {
-        hour: '2-digit', 
-        minute: '2-digit'
-    });
-    
-    const spotsLeft = event.maxParticipants - event.participants.length;
-    
-    let message = `${event.name}\n${dateStr} ${timeStr}\n${event.location}\n${spotsLeft} spots left`;
-    
-    if (event.participants.length > 0) {
-        message += `\nGoing: ${event.participants.join(', ')}`;
-    }
-    
-    message += `\n\nReply Y to join or N to pass`;
-    return message;
-}
-
-function handleAcceptance(event, friendName, phoneNumber) {
-    const pendingIndex = event.pendingInvitations.indexOf(friendName);
-    if (pendingIndex > -1) {
-        event.pendingInvitations.splice(pendingIndex, 1);
-    }
-    
-    if (event.participants.length < event.maxParticipants) {
-        event.participants.push(friendName);
-        
-        const confirmMessage = `Great! You're in for ${event.name}. See you there!`;
-        client.messages.create({
-            body: confirmMessage,
-            from: twilioPhoneNumber,
-            to: phoneNumber
+            
+            db.get(query, params, (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
         });
-        
-        if (event.participants.length >= event.maxParticipants) {
-            event.status = 'full';
-            sendEventFullMessages(event);
-        }
-    } else {
-        const fullMessage = `Sorry! ${event.name} is now full. Maybe next time!`;
-        client.messages.create({
-            body: fullMessage,
-            from: twilioPhoneNumber,
-            to: phoneNumber
-        });
-    }
-}
+    };
 
-function handleDecline(event, friendName, phoneNumber) {
-    const pendingIndex = event.pendingInvitations.indexOf(friendName);
-    if (pendingIndex > -1) {
-        event.pendingInvitations.splice(pendingIndex, 1);
-    }
+    const eventId = eventIdMatch ? parseInt(eventIdMatch[1]) : null;
     
-    const declineMessage = `No worries! Maybe next time.`;
-    client.messages.create({
-        body: declineMessage,
-        from: twilioPhoneNumber,
-        to: phoneNumber
-    });
-    
-    // Check if we need to invite next circle
-    if (event.pendingInvitations.length === 0 && 
-        event.participants.length < event.maxParticipants) {
-        event.currentCircle++;
-        sendInvitationsToCurrentCircle(event);
-    }
-}
+    findInvitation(eventId)
+        .then(invitation => {
+            if (!invitation) {
+                return client.messages.create({
+                    body: 'No pending invitation found for this number. Please check the Event ID or contact the event organizer.',
+                    from: twilioPhoneNumber,
+                    to: phoneNumber
+                });
+            }
 
-function sendEventFullMessages(event) {
-    event.pendingInvitations.forEach(friendName => {
-        const phoneNumber = phoneNumbers[friendName];
-        if (phoneNumber) {
-            const fullMessage = `Sorry! ${event.name} is now full. Maybe next time!`;
+            let response = '';
+            let newStatus = '';
+
+            if (incomingMessage.includes('yes')) {
+                // Check if event is full
+                return new Promise((resolve, reject) => {
+                    db.get(`SELECT COUNT(*) as confirmed_count 
+                           FROM invitations 
+                           WHERE event_id = ? AND status = 'confirmed'`,
+                          [invitation.event_id], (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result.confirmed_count);
+                    });
+                }).then(confirmedCount => {
+                    if (confirmedCount >= invitation.max_participants) {
+                        // Event is full - add to waitlist
+                        newStatus = 'waitlist';
+                        response = `Thanks ${invitation.name}! Unfortunately "${invitation.event_name}" is now full (${invitation.max_participants} people confirmed). You've been added to the waitlist and we'll notify you if a spot opens up! 🎉`;
+                    } else {
+                        // Confirm attendance
+                        newStatus = 'confirmed';
+                        const eventDate = new Date(invitation.datetime);
+                        const formattedDate = eventDate.toLocaleDateString() + ' at ' + eventDate.toLocaleTimeString();
+                        
+                        response = `🎉 Awesome ${invitation.name}! You're CONFIRMED for "${invitation.event_name}"!
+
+📅 ${formattedDate}
+📍 ${invitation.location}
+
+See you there! 🥳`;
+                    }
+
+                    // Update invitation status
+                    return new Promise((resolve, reject) => {
+                        db.run(`UPDATE invitations 
+                               SET status = ?, responded_at = CURRENT_TIMESTAMP 
+                               WHERE id = ?`,
+                              [newStatus, invitation.id], (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+                });
+
+            } else if (incomingMessage.includes('no')) {
+                newStatus = 'declined';
+                response = `Thanks for letting us know, ${invitation.name}. Maybe next time! 😊`;
+
+                // Update invitation status
+                return new Promise((resolve, reject) => {
+                    db.run(`UPDATE invitations 
+                           SET status = ?, responded_at = CURRENT_TIMESTAMP 
+                           WHERE id = ?`,
+                          [newStatus, invitation.id], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+            }
+        })
+        .then(() => {
+            if (response) {
+                return client.messages.create({
+                    body: response,
+                    from: twilioPhoneNumber,
+                    to: phoneNumber
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error processing SMS response:', error);
             client.messages.create({
-                body: fullMessage,
+                body: 'Sorry, there was an error processing your response. Please try again or contact support.',
                 from: twilioPhoneNumber,
                 to: phoneNumber
             });
-        }
-    });
-    event.pendingInvitations = [];
-}
+        });
 
-function findFriendByPhone(phoneNumber) {
-    for (const [name, phone] of Object.entries(phoneNumbers)) {
-        if (phone === phoneNumber) {
-            return name;
-        }
-    }
-    return null;
-}
-
-app.listen(PORT, () => {
-    console.log(`SMS Server running on port ${PORT}`);
+    res.status(200).send('');
 });
 
-module.exports = app;
+// Get event details and responses
+app.get('/api/events/:id', (req, res) => {
+    const eventId = req.params.id;
+
+    db.get(`SELECT * FROM events WHERE id = ?`, [eventId], (err, event) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+        if (!event) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        db.all(`SELECT * FROM invitations WHERE event_id = ? ORDER BY responded_at DESC`,
+               [eventId], (err, invitations) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            // Group responses
+            const responses = {
+                confirmed: invitations.filter(i => i.status === 'confirmed'),
+                declined: invitations.filter(i => i.status === 'declined'),
+                waitlist: invitations.filter(i => i.status === 'waitlist'),
+                pending: invitations.filter(i => i.status === 'pending')
+            };
+
+            res.json({
+                event,
+                responses,
+                stats: {
+                    total_invited: invitations.length,
+                    confirmed: responses.confirmed.length,
+                    declined: responses.declined.length,
+                    waitlist: responses.waitlist.length,
+                    pending: responses.pending.length
+                }
+            });
+        });
+    });
+});
+
+// Get all events
+app.get('/api/events', (req, res) => {
+    db.all(`SELECT e.*, COUNT(i.id) as total_invites,
+                   SUM(CASE WHEN i.status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_count
+            FROM events e 
+            LEFT JOIN invitations i ON e.id = i.event_id 
+            GROUP BY e.id 
+            ORDER BY e.created_at DESC`, (err, events) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+        res.json(events);
+    });
+});
+
+// Serve main page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+app.listen(port, () => {
+    console.log(`🚀 Event Circles server running on port ${port}`);
+    console.log(`📱 SMS webhook URL: http://your-domain.com/webhook/sms`);
+    console.log(`💻 Web interface: http://localhost:${port}`);
+    
+    if (!accountSid) {
+        console.log('\n⚠️  Don\'t forget to create a .env file with your Twilio credentials!');
+    }
+});
