@@ -38,11 +38,15 @@
             margin-bottom: 15px;
         }
 
-        input, textarea {
+        input, textarea, select {
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 5px;
             flex: 1;
+        }
+
+        select {
+            background: white;
         }
 
         button {
@@ -90,6 +94,14 @@
             font-weight: bold;
             margin: 10px 0;
         }
+
+        .selected-circle {
+            background: #e6fffa;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #38b2ac;
+        }
     </style>
 </head>
 <body>
@@ -134,6 +146,13 @@
             <input type="datetime-local" id="eventDateTime" style="margin-bottom: 10px;">
             <input type="text" id="eventLocation" placeholder="Location" style="margin-bottom: 10px;">
             <input type="number" id="maxParticipants" value="4" min="1" placeholder="Max participants" style="margin-bottom: 10px;">
+            
+            <select id="selectedCircle" style="margin-bottom: 10px;">
+                <option value="">Select a circle to invite</option>
+            </select>
+            
+            <div id="selectedCircleInfo"></div>
+            
             <textarea id="eventDescription" placeholder="Description" style="margin-bottom: 10px;"></textarea>
             
             <button onclick="createEvent()">Create Event & Send SMS</button>
@@ -229,6 +248,7 @@
             showStatus(`Created circle: ${name}`);
             updateFriendsList();
             updateCirclesList();
+            updateCircleDropdown();
         }
 
         function updateCirclesList() {
@@ -250,10 +270,46 @@
             `).join('');
         }
 
+        function updateCircleDropdown() {
+            const select = document.getElementById('selectedCircle');
+            
+            // Clear existing options except the first one
+            select.innerHTML = '<option value="">Select a circle to invite</option>';
+            
+            // Add circles as options
+            circles.forEach(circle => {
+                const option = document.createElement('option');
+                option.value = circle.id;
+                option.textContent = `${circle.name} (${circle.friends.length} friends)`;
+                select.appendChild(option);
+            });
+        }
+
+        function updateSelectedCircleInfo() {
+            const select = document.getElementById('selectedCircle');
+            const infoDiv = document.getElementById('selectedCircleInfo');
+            
+            if (!select.value) {
+                infoDiv.innerHTML = '';
+                return;
+            }
+            
+            const selectedCircle = circles.find(c => c.id == select.value);
+            if (selectedCircle) {
+                infoDiv.innerHTML = `
+                    <div class="selected-circle">
+                        <strong>Selected Circle: ${selectedCircle.name}</strong><br>
+                        <small>Will invite: ${selectedCircle.friends.map(f => f.name).join(', ')}</small>
+                    </div>
+                `;
+            }
+        }
+
         function deleteCircle(id) {
             if (confirm('Delete this circle?')) {
                 circles = circles.filter(c => c.id !== id);
                 updateCirclesList();
+                updateCircleDropdown();
                 showStatus('Circle deleted');
             }
         }
@@ -263,29 +319,51 @@
             const dateTime = document.getElementById('eventDateTime').value;
             const location = document.getElementById('eventLocation').value.trim();
             const maxParticipants = document.getElementById('maxParticipants').value;
+            const description = document.getElementById('eventDescription').value.trim();
+            const selectedCircleId = document.getElementById('selectedCircle').value;
             
             if (!name || !dateTime || !location) {
                 alert('Please fill in all event fields');
                 return;
             }
             
-            if (circles.length === 0) {
-                alert('Please create some circles first');
+            if (!selectedCircleId) {
+                alert('Please select a circle to invite');
                 return;
             }
             
-            alert(`Event "${name}" created! Note: SMS requires A2P 10DLC registration to send.`);
+            const selectedCircle = circles.find(c => c.id == selectedCircleId);
+            
+            if (selectedCircle) {
+                // Format the date/time nicely
+                const eventDate = new Date(dateTime);
+                const formattedDate = eventDate.toLocaleDateString() + ' at ' + eventDate.toLocaleTimeString();
+                
+                // Create the SMS message
+                const smsMessage = `🎉 You're invited to ${name}!\n\n📅 When: ${formattedDate}\n📍 Where: ${location}\n👥 Max ${maxParticipants} people\n\n${description ? description + '\n\n' : ''}Reply YES to join or NO to decline. First ${maxParticipants} responses confirmed!`;
+                
+                // Show message preview
+                const phoneNumbers = selectedCircle.friends.map(f => `${f.name}: ${f.phone}`).join('\n');
+                
+                alert(`📱 SMS MESSAGE PREVIEW:\n\n"${smsMessage}"\n\n📞 SENDING TO:\n${phoneNumbers}\n\n✅ Event "${name}" created!\n\n⚠️ Note: This is a preview. Real SMS requires A2P 10DLC registration.`);
+            }
             
             // Clear form
             document.getElementById('eventName').value = '';
             document.getElementById('eventDateTime').value = '';
             document.getElementById('eventLocation').value = '';
             document.getElementById('eventDescription').value = '';
+            document.getElementById('selectedCircle').value = '';
+            updateSelectedCircleInfo();
         }
 
         // Initialize
         updateFriendsList();
         updateCirclesList();
+        updateCircleDropdown();
+        
+        // Set up circle selection event listener
+        document.getElementById('selectedCircle').addEventListener('change', updateSelectedCircleInfo);
     </script>
 </body>
 </html>
