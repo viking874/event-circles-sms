@@ -1,234 +1,234 @@
-const express = require('express');
-const cors = require('cors');
-const twilio = require('twilio');
-require('dotenv').config();
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Twilio configuration
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-const client = twilio(accountSid, authToken);
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
-// In-memory storage
-let events = [];
-let circles = [];
-let phoneNumbers = {};
-
-// API Routes
-app.get('/api/events', (req, res) => {
-    res.json(events);
-});
-
-app.get('/api/circles', (req, res) => {
-    res.json(circles);
-});
-
-app.post('/api/circles', (req, res) => {
-    const circle = {
-        id: Date.now(),
-        ...req.body
-    };
-    circles.push(circle);
-    res.json(circle);
-});
-
-app.post('/api/events', (req, res) => {
-    const event = {
-        id: Date.now(),
-        ...req.body,
-        participants: [],
-        invitationsSent: [],
-        pendingInvitations: [],
-        responses: [],
-        status: 'active'
-    };
-    
-    events.push(event);
-    sendInvitationsToCurrentCircle(event);
-    res.json(event);
-});
-
-app.post('/api/friends', (req, res) => {
-    const { name, phoneNumber } = req.body;
-    phoneNumbers[name] = phoneNumber;
-    res.json({ success: true });
-});
-
-app.get('/api/friends', (req, res) => {
-    res.json(phoneNumbers);
-});
-
-app.post('/api/sms-webhook', (req, res) => {
-    const { From, Body } = req.body;
-    const response = Body.trim().toUpperCase();
-    
-    const friendName = findFriendByPhone(From);
-    if (!friendName) {
-        console.log(`Unknown phone number: ${From}`);
-        return res.status(200).send();
-    }
-    
-    const activeEvents = events.filter(event => 
-        event.status === 'active' && 
-        event.pendingInvitations.includes(friendName)
-    );
-    
-    activeEvents.forEach(event => {
-        if (response === 'Y' || response === 'YES') {
-            handleAcceptance(event, friendName, From);
-        } else if (response === 'N' || response === 'NO') {
-            handleDecline(event, friendName, From);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Circles - SMS Integration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-    });
-    
-    res.status(200).send();
-});
 
-function sendInvitationsToCurrentCircle(event) {
-    if (event.currentCircle >= event.circleOrder.length) return;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
 
-    const circleId = event.circleOrder[event.currentCircle];
-    const circle = circles.find(c => c.id === circleId);
-    
-    if (!circle) return;
-    
-    circle.friends.forEach(async (friend) => {
-        const friendName = friend.name || friend;
-        const friendPhone = friend.phone || phoneNumbers[friendName];
-        
-        if (!event.invitationsSent.includes(friendName) && 
-            !event.participants.includes(friendName) && 
-            friendPhone) {
-            
-            const message = createInvitationMessage(event);
-            
-            try {
-                await client.messages.create({
-                    body: message,
-                    from: twilioPhoneNumber,
-                    to: friendPhone
-                });
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .card h2 {
+            color: #5a67d8;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #5a67d8, #667eea);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .add-friend-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: end;
+        }
+
+        .circle-item {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #5a67d8;
+        }
+
+        .friend-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+        }
+
+        .friend-details {
+            flex: 1;
+        }
+
+        .friend-name {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 13px;
+        }
+
+        .friend-phone {
+            font-size: 11px;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Event Circles - SMS Integration</h1>
+            <p>Tiered friend circles with real SMS invitations (+17329367666)</p>
+        </div>
+
+        <div class="main-content">
+            <div class="card">
+                <h2>Create Friend Circles</h2>
+                <div class="form-group">
+                    <label>Circle Name</label>
+                    <input type="text" id="circleName" placeholder="e.g., Close Friends, Golf Buddies">
+                </div>
+                <div class="add-friend-form">
+                    <input type="text" id="friendName" placeholder="Friend name">
+                    <input type="tel" id="friendPhone" placeholder="+1234567890">
+                    <button class="btn" onclick="addFriend()">Add</button>
+                </div>
+                <button class="btn" onclick="createCircle()">Create Circle</button>
                 
-                event.invitationsSent.push(friendName);
-                event.pendingInvitations.push(friendName);
-                
-                console.log(`Invitation sent to ${friendName}`);
-            } catch (error) {
-                console.error(`Failed to send SMS to ${friendName}:`, error);
+                <div id="circlesList"></div>
+            </div>
+
+            <div class="card">
+                <h2>Create Event</h2>
+                <div class="form-group">
+                    <label>Event Name</label>
+                    <input type="text" id="eventName" placeholder="e.g., Saturday Golf">
+                </div>
+                <div class="form-group">
+                    <label>Date & Time</label>
+                    <input type="datetime-local" id="eventDateTime">
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="eventLocation" placeholder="e.g., Pine Valley Golf Club">
+                </div>
+                <div class="form-group">
+                    <label>Max Participants</label>
+                    <input type="number" id="maxParticipants" value="4" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="eventDescription" placeholder="Event details..."></textarea>
+                </div>
+                <button class="btn" onclick="createEvent()">Send SMS Invitations</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let circles = [];
+        let currentFriends = [];
+
+        function addFriend() {
+            const friendName = document.getElementById('friendName').value.trim();
+            const friendPhone = document.getElementById('friendPhone').value.trim();
+            
+            if (friendName && friendPhone) {
+                currentFriends.push({name: friendName, phone: friendPhone});
+                document.getElementById('friendName').value = '';
+                document.getElementById('friendPhone').value = '';
+                console.log('Added friend:', friendName);
             }
         }
-    });
-}
 
-function createInvitationMessage(event) {
-    const eventDate = new Date(event.dateTime);
-    const dateStr = eventDate.toLocaleDateString('en-US', {
-        weekday: 'short', 
-        month: 'short', 
-        day: 'numeric'
-    });
-    const timeStr = eventDate.toLocaleTimeString([], {
-        hour: '2-digit', 
-        minute: '2-digit'
-    });
-    
-    const spotsLeft = event.maxParticipants - event.participants.length;
-    
-    let message = `${event.name}\n${dateStr} ${timeStr}\n${event.location}\n${spotsLeft} spots left`;
-    
-    if (event.participants.length > 0) {
-        message += `\nGoing: ${event.participants.join(', ')}`;
-    }
-    
-    message += `\n\nReply Y to join or N to pass`;
-    return message;
-}
-
-function handleAcceptance(event, friendName, phoneNumber) {
-    const pendingIndex = event.pendingInvitations.indexOf(friendName);
-    if (pendingIndex > -1) {
-        event.pendingInvitations.splice(pendingIndex, 1);
-    }
-    
-    if (event.participants.length < event.maxParticipants) {
-        event.participants.push(friendName);
-        
-        const confirmMessage = `Great! You're in for ${event.name}. See you there!`;
-        client.messages.create({
-            body: confirmMessage,
-            from: twilioPhoneNumber,
-            to: phoneNumber
-        });
-        
-        if (event.participants.length >= event.maxParticipants) {
-            event.status = 'full';
-            sendEventFullMessages(event);
+        function createCircle() {
+            const name = document.getElementById('circleName').value.trim();
+            if (name && currentFriends.length > 0) {
+                const newCircle = {
+                    id: Date.now(),
+                    name: name,
+                    friends: [...currentFriends]
+                };
+                circles.push(newCircle);
+                currentFriends = [];
+                document.getElementById('circleName').value = '';
+                renderCircles();
+            }
         }
-    } else {
-        const fullMessage = `Sorry! ${event.name} is now full. Maybe next time!`;
-        client.messages.create({
-            body: fullMessage,
-            from: twilioPhoneNumber,
-            to: phoneNumber
-        });
-    }
-}
 
-function handleDecline(event, friendName, phoneNumber) {
-    const pendingIndex = event.pendingInvitations.indexOf(friendName);
-    if (pendingIndex > -1) {
-        event.pendingInvitations.splice(pendingIndex, 1);
-    }
-    
-    const declineMessage = `No worries! Maybe next time.`;
-    client.messages.create({
-        body: declineMessage,
-        from: twilioPhoneNumber,
-        to: phoneNumber
-    });
-    
-    // Check if we need to invite next circle
-    if (event.pendingInvitations.length === 0 && 
-        event.participants.length < event.maxParticipants) {
-        event.currentCircle++;
-        sendInvitationsToCurrentCircle(event);
-    }
-}
-
-function sendEventFullMessages(event) {
-    event.pendingInvitations.forEach(friendName => {
-        const phoneNumber = phoneNumbers[friendName];
-        if (phoneNumber) {
-            const fullMessage = `Sorry! ${event.name} is now full. Maybe next time!`;
-            client.messages.create({
-                body: fullMessage,
-                from: twilioPhoneNumber,
-                to: phoneNumber
-            });
+        function renderCircles() {
+            const container = document.getElementById('circlesList');
+            container.innerHTML = circles.map(circle => `
+                <div class="circle-item">
+                    <h3>${circle.name}</h3>
+                    ${circle.friends.map(friend => `
+                        <div class="friend-item">
+                            <div class="friend-details">
+                                <div class="friend-name">${friend.name}</div>
+                                <div class="friend-phone">${friend.phone}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
         }
-    });
-    event.pendingInvitations = [];
-}
 
-function findFriendByPhone(phoneNumber) {
-    for (const [name, phone] of Object.entries(phoneNumbers)) {
-        if (phone === phoneNumber) {
-            return name;
-        }
-    }
-    return null;
-}
-
-app.listen(PORT, () => {
-    console.log(`SMS Server running on port ${PORT}`);
-});
-
-module.exports = app;
+        async function createEvent() {
+            const name = document.getElementById('eventName').value.trim();
+            const dateTime = document.getElementById('eventDateTime').value;
+            const location = document.getElementById('eventLocation').
